@@ -1,0 +1,26 @@
+version: '3.8'
+services:
+  gateway:
+    build: ./Gateway
+    ports:
+      - "8080:8080"
+  auth-service:
+    build: ./AuthService
+    ports:
+      - "8081:8081"
+  agent-service:
+    build: ./AgentService
+    ports:
+      - "8082:8082"
+  avatar-service:
+    build: ./AvatarService
+    ports:
+      - "8083:8083"
+  voice-service:
+    build: ./VoiceService
+    ports:
+      - "8084:8084"
+  voicevox:
+    image: voicevox/voicevox_engine:cpu-ubuntu20.04-latest
+    ports:
+      - "50032:50021"

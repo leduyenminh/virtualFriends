@@ -1,0 +1,24 @@
+server:
+  port: 8084
+
+elevenlabs:
+  apiKey: "${ELEVENLABS_API_KEY:}"
+  voiceId: "21m00Tcm4TlvDq8ikWAM"
+
+coeiroink:
+  url: "${COEIROINK_URL:http://voicevox:50021}"  # Example voice ID
+
+grpc:
+  server:
+    port: 9090
+  metrics:
+    enabled: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when-authorized

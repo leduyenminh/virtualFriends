@@ -1,0 +1,42 @@
+server:
+  port: 8082
+
+openai:
+  apiKey: "${OPENAI_API_KEY:}"
+
+serp:
+  apiKey: "${SERP_API_KEY:}"
+
+google:
+  credentials:
+    path: "${GOOGLE_CREDENTIALS_PATH:}"
+
+microsoft:
+  client:
+    id: "${MICROSOFT_CLIENT_ID:}"
+    secret: "${MICROSOFT_CLIENT_SECRET:}"
+  tenant:
+    id: "${MICROSOFT_TENANT_ID:}"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+
+resilience4j.circuitbreaker:
+  instances:
+    openai:
+      failureRateThreshold: 50
+      waitDurationInOpenState: 10000
+      permittedNumberOfCallsInHalfOpenState: 3
+      slidingWindowSize: 10
+
+grpc:
+  client:
+    voice-service:
+      address: 'static://localhost:9090'
+      negotiation-type: plaintext

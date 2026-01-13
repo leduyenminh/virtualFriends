@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package com.magent.voice;
+
+option java_multiple_files = true;
+option java_package = "com.magent.voice.grpc";
+option java_outer_classname = "VoiceProto";
+
+service VoiceService {
+  rpc GenerateVoice(GenerateVoiceRequest) returns (GenerateVoiceResponse);
+  rpc TranscribeAudio(TranscribeAudioRequest) returns (TranscribeAudioResponse);
+}
+
+message GenerateVoiceRequest {
+  string text = 1;
+  string provider = 2;
+}
+
+message GenerateVoiceResponse {
+  bytes audio = 1;
+}
+
+message TranscribeAudioRequest {
+  bytes audio_data = 1;
+}
+
+message TranscribeAudioResponse {
+  string transcription = 1;
+}

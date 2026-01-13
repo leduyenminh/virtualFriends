@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-service-config
+data:
+  application.yml: |
+    server:
+      port: 8082
+    openai:
+      apiKey: "${OPENAI_API_KEY:}"
+    serp:
+      apiKey: "${SERP_API_KEY:}"
+    spring:
+      datasource:
+        url: jdbc:h2:mem:testdb
+      jpa:
+        hibernate:
+          ddl-auto: update
+    management:
+      endpoints:
+        web:
+          exposure:
+            include: health,info

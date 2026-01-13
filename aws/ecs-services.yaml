@@ -1,0 +1,425 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Magent ECS Services'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, staging, prod]
+
+  VPCStackName:
+    Type: String
+    Description: Name of the VPC CloudFormation stack
+
+  DesiredCount:
+    Type: Number
+    Default: 1
+    Description: Number of tasks to run
+
+  TaskCpu:
+    Type: String
+    Default: '256'
+    Description: CPU units for the task
+
+  TaskMemory:
+    Type: String
+    Default: '512'
+    Description: Memory for the task
+
+Resources:
+  # ECS Task Execution Role
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${Environment}-magent-ecs-execution-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      Policies:
+        - PolicyName: SecretsManagerAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${Environment}/magent/api-keys-*'
+
+  # ECS Task Role
+  ECSTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${Environment}-magent-ecs-task-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource: !Sub 'arn:aws:s3:::${Environment}-magent-static-assets/*'
+
+  # Gateway Service
+  GatewayTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${Environment}-magent-gateway'
+      Cpu: !Ref TaskCpu
+      Memory: !Ref TaskMemory
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      ContainerDefinitions:
+        - Name: gateway
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${Environment}/magent-gateway:latest'
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8080
+              Protocol: tcp
+          Environment:
+            - Name: SPRING_PROFILES_ACTIVE
+              Value: !Ref Environment
+            - Name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
+              Value: !Sub 'http://internal-${AWS::StackName}-alb-${AWS::AccountId}.${AWS::Region}.elb.amazonaws.com/eureka/'
+          Secrets:
+            - Name: JWT_SECRET
+              ValueFrom: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${Environment}/magent/api-keys:JWT_SECRET::'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref GatewayLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+
+  GatewayService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub '${Environment}-magent-gateway'
+      Cluster: !ImportValue
+        Fn::Sub: '${VPCStackName}-ECSClusterName'
+      TaskDefinition: !Ref GatewayTaskDefinition
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !ImportValue
+              Fn::Sub: '${VPCStackName}-PrivateSubnet1Id'
+            - !ImportValue
+              Fn::Sub: '${VPCStackName}-PrivateSubnet2Id'
+          SecurityGroups:
+            - !ImportValue
+              Fn::Sub: '${VPCStackName}-ECSSecurityGroup'
+      LoadBalancers:
+        - TargetGroupArn: !ImportValue
+            Fn::Sub: '${VPCStackName}-GatewayTargetGroup'
+          ContainerName: gateway
+          ContainerPort: 8080
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Agent Service
+  AgentTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${Environment}-magent-agent'
+      Cpu: !Ref TaskCpu
+      Memory: !Ref TaskMemory
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      ContainerDefinitions:
+        - Name: agent-service
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${Environment}/magent-agent-service:latest'
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8082
+              Protocol: tcp
+          Environment:
+            - Name: SPRING_PROFILES_ACTIVE
+              Value: !Ref Environment
+            - Name: SPRING_DATASOURCE_URL
+              Value: !Sub 'jdbc:postgresql://${AWS::StackName}-rds.${AWS::Region}.rds.amazonaws.com:5432/magent'
+            - Name: SPRING_DATASOURCE_USERNAME
+              Value: magentadmin
+            - Name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
+              Value: !Sub 'http://internal-${AWS::StackName}-alb-${AWS::AccountId}.${AWS::Region}.elb.amazonaws.com/eureka/'
+          Secrets:
+            - Name: SPRING_DATASOURCE_PASSWORD
+              ValueFrom: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${Environment}/magent/db-password:password::'
+            - Name: OPENAI_API_KEY
+              ValueFrom: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${Environment}/magent/api-keys:OPENAI_API_KEY::'
+            - Name: SERP_API_KEY
+              ValueFrom: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${Environment}/magent/api-keys:SERP_API_KEY::'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref AgentLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+
+  AgentService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub '${Environment}-magent-agent'
+      Cluster: !ImportValue
+        Fn::Sub: '${VPCStackName}-ECSClusterName'
+      TaskDefinition: !Ref AgentTaskDefinition
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !ImportValue
+              Fn::Sub: '${VPCStackName}-PrivateSubnet1Id'
+            - !ImportValue
+              Fn::Sub: '${VPCStackName}-PrivateSubnet2Id'
+          SecurityGroups:
+            - !ImportValue
+              Fn::Sub: '${VPCStackName}-ECSSecurityGroup'
+      LoadBalancers:
+        - TargetGroupArn: !ImportValue
+            Fn::Sub: '${VPCStackName}-AgentServiceTargetGroup'
+          ContainerName: agent-service
+          ContainerPort: 8082
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Auth Service
+  AuthTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${Environment}-magent-auth'
+      Cpu: !Ref TaskCpu
+      Memory: !Ref TaskMemory
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      ContainerDefinitions:
+        - Name: auth-service
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${Environment}/magent-auth-service:latest'
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8081
+              Protocol: tcp
+          Environment:
+            - Name: SPRING_PROFILES_ACTIVE
+              Value: !Ref Environment
+            - Name: SPRING_DATASOURCE_URL
+              Value: !Sub 'jdbc:postgresql://${AWS::StackName}-rds.${AWS::Region}.rds.amazonaws.com:5432/magent'
+            - Name: SPRING_DATASOURCE_USERNAME
+              Value: magentadmin
+            - Name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
+              Value: !Sub 'http://internal-${AWS::StackName}-alb-${AWS::AccountId}.${AWS::Region}.elb.amazonaws.com/eureka/'
+          Secrets:
+            - Name: SPRING_DATASOURCE_PASSWORD
+              ValueFrom: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${Environment}/magent/db-password:password::'
+            - Name: JWT_SECRET
+              ValueFrom: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${Environment}/magent/api-keys:JWT_SECRET::'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref AuthLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+
+  AuthService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub '${Environment}-magent-auth'
+      Cluster: !ImportValue
+        Fn::Sub: '${VPCStackName}-ECSClusterName'
+      TaskDefinition: !Ref AuthTaskDefinition
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !ImportValue
+              Fn::Sub: '${VPCStackName}-PrivateSubnet1Id'
+            - !ImportValue
+              Fn::Sub: '${VPCStackName}-PrivateSubnet2Id'
+          SecurityGroups:
+            - !ImportValue
+              Fn::Sub: '${VPCStackName}-ECSSecurityGroup'
+      LoadBalancers:
+        - TargetGroupArn: !ImportValue
+            Fn::Sub: '${VPCStackName}-AuthServiceTargetGroup'
+          ContainerName: auth-service
+          ContainerPort: 8081
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Avatar Service
+  AvatarTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${Environment}-magent-avatar'
+      Cpu: !Ref TaskCpu
+      Memory: !Ref TaskMemory
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      ContainerDefinitions:
+        - Name: avatar-service
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${Environment}/magent-avatar-service:latest'
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8083
+              Protocol: tcp
+          Environment:
+            - Name: SPRING_PROFILES_ACTIVE
+              Value: !Ref Environment
+            - Name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
+              Value: !Sub 'http://internal-${AWS::StackName}-alb-${AWS::AccountId}.${AWS::Region}.elb.amazonaws.com/eureka/'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref AvatarLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+
+  AvatarService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub '${Environment}-magent-avatar'
+      Cluster: !ImportValue
+        Fn::Sub: '${VPCStackName}-ECSClusterName'
+      TaskDefinition: !Ref AvatarTaskDefinition
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !ImportValue
+              Fn::Sub: '${VPCStackName}-PrivateSubnet1Id'
+            - !ImportValue
+              Fn::Sub: '${VPCStackName}-PrivateSubnet2Id'
+          SecurityGroups:
+            - !ImportValue
+              Fn::Sub: '${VPCStackName}-ECSSecurityGroup'
+      LoadBalancers:
+        - TargetGroupArn: !ImportValue
+            Fn::Sub: '${VPCStackName}-AvatarServiceTargetGroup'
+          ContainerName: avatar-service
+          ContainerPort: 8083
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # Voice Service
+  VoiceTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub '${Environment}-magent-voice'
+      Cpu: !Ref TaskCpu
+      Memory: !Ref TaskMemory
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      ContainerDefinitions:
+        - Name: voice-service
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${Environment}/magent-voice-service:latest'
+          Essential: true
+          PortMappings:
+            - ContainerPort: 8084
+              Protocol: tcp
+          Environment:
+            - Name: SPRING_PROFILES_ACTIVE
+              Value: !Ref Environment
+            - Name: EUREKA_CLIENT_SERVICEURL_DEFAULTZONE
+              Value: !Sub 'http://internal-${AWS::StackName}-alb-${AWS::Region}.elb.amazonaws.com/eureka/'
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref VoiceLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+
+  VoiceService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub '${Environment}-magent-voice'
+      Cluster: !ImportValue
+        Fn::Sub: '${VPCStackName}-ECSClusterName'
+      TaskDefinition: !Ref VoiceTaskDefinition
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - !ImportValue
+              Fn::Sub: '${VPCStackName}-PrivateSubnet1Id'
+            - !ImportValue
+              Fn::Sub: '${VPCStackName}-PrivateSubnet2Id'
+          SecurityGroups:
+            - !ImportValue
+              Fn::Sub: '${VPCStackName}-ECSSecurityGroup'
+      LoadBalancers:
+        - TargetGroupArn: !ImportValue
+            Fn::Sub: '${VPCStackName}-VoiceServiceTargetGroup'
+          ContainerName: voice-service
+          ContainerPort: 8084
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # CloudWatch Log Groups
+  GatewayLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${Environment}/magent-gateway'
+      RetentionInDays: 30
+
+  AuthLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${Environment}/magent-auth'
+      RetentionInDays: 30
+
+  AgentLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${Environment}/magent-agent'
+      RetentionInDays: 30
+
+  AvatarLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${Environment}/magent-avatar'
+      RetentionInDays: 30
+
+  VoiceLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/ecs/${Environment}/magent-voice'
+      RetentionInDays: 30

@@ -1,0 +1,21 @@
+<svg width="100" height="100" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="100" height="100" fill="#fffacd"/>
+  <!-- Hair -->
+  <path d="M30 40 Q50 20 70 40 L70 60 Q50 50 30 60 Z" fill="#1e90ff"/>
+  <!-- Face -->
+  <ellipse cx="50" cy="55" rx="15" ry="10" fill="#ffcccb"/>
+  <!-- Eyes -->
+  <circle cx="46" cy="52" r="2" fill="#dc143c"/>
+  <circle cx="54" cy="52" r="2" fill="#dc143c"/>
+  <!-- Blush -->
+  <circle cx="42" cy="55" r="1" fill="#ff69b4"/>
+  <circle cx="58" cy="55" r="1" fill="#ff69b4"/>
+  <!-- Mouth -->
+  <path d="M48 58 Q50 60 52 58" stroke="#000" stroke-width="1" fill="none"/>
+  <!-- Horns -->
+  <polygon points="42,45 44,35 46,45" fill="#ff6347"/>
+  <polygon points="54,45 56,35 58,45" fill="#ff6347"/>
+  <!-- Heart -->
+  <path d="M50 70 Q45 65 40 70 Q45 75 50 80 Q55 75 60 70 Q55 65 50 70" fill="#ff1493"/>
+</svg>
