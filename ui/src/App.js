@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Live2DAvatar from './components/Live2DAvatar';
 import AvatarSelector from './components/AvatarSelector';
+import ErrorNotification from './components/ErrorNotification';
 import './App.css';
 
 function App() {
@@ -13,6 +14,7 @@ function App() {
   const [mediaRecorder, setMediaRecorder] = useState(null);
   const [selectedAvatar, setSelectedAvatar] = useState(null);
   const [currentEmotion, setCurrentEmotion] = useState('neutral');
+  const [retryFn, setRetryFn] = useState(null);
 
   useEffect(() => {
     // Guest login on load
@@ -232,6 +234,7 @@ function App() {
           </div>
         )}
       </div>
+      <ErrorNotification onRetry={retryFn} />
     </div>
   );
 }

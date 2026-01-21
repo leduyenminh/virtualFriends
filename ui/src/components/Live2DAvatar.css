@@ -35,4 +35,224 @@
   padding: 8px 16px;
   background: #f0f0f0;
   border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
+
+.speaking-indicator {
+  font-size: 14px;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Avatar controls */
+.avatar-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  width: 100%;
+}
+
+.control-button {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.voice-button {
+  background: #2196f3;
+  color: white;
+}
+
+.voice-button:hover:not(:disabled) {
+  background: #1976d2;
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
+}
+
+.gesture-button {
+  background: #4caf50;
+  color: white;
+}
+
+.gesture-button:hover {
+  background: #388e3c;
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+}
+
+.customize-button {
+  background: #ff9800;
+  color: white;
+}
+
+.customize-button:hover {
+  background: #f57c00;
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(255, 152, 0, 0.3);
+}
+
+.control-button:active {
+  transform: scale(0.95);
+}
+
+.control-button:disabled {
+  background: #cccccc;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Customization panel */
+.customization-panel {
+  width: 100%;
+  max-width: 400px;
+  background: white;
+  border: 2px solid #ddd;
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.customization-panel h3 {
+  margin: 0 0 12px 0;
+  color: #333;
+  font-size: 16px;
+}
+
+.customization-group {
+  margin-bottom: 16px;
+}
+
+.customization-group label {
+  display: block;
+  font-weight: 600;
+  color: #666;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.color-options,
+.expression-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.color-button,
+.expression-button {
+  padding: 8px 12px;
+  border: 2px solid #ddd;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  color: #333;
+}
+
+.color-button:hover,
+.expression-button:hover {
+  border-color: #2196f3;
+  background: #e3f2fd;
+  transform: scale(1.05);
+}
+
+.color-button:active,
+.expression-button:active {
+  background: #2196f3;
+  color: white;
+  border-color: #2196f3;
+}
+
+/* Voice play button (legacy, for compatibility) */
+.voice-play-button {
+  padding: 10px 24px;
+  background: #2196f3;
+  color: white;
+  border: none;
+  border-radius: 24px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.voice-play-button:hover:not(:disabled) {
+  background: #1976d2;
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
+}
+
+.voice-play-button:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.voice-play-button:disabled {
+  background: #90caf9;
+  cursor: not-allowed;
+  opacity: 0.8;
+}
+
+/* Responsive design */
+@media (max-width: 600px) {
+  .live2d-canvas,
+  .avatar-placeholder {
+    width: 300px;
+    height: 450px;
+  }
+
+  .avatar-controls {
+    gap: 6px;
+  }
+
+  .control-button {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  .customization-panel {
+    max-width: 300px;
+    padding: 12px;
+  }
+
+  .customization-group {
+    margin-bottom: 12px;
+  }
+
+  .color-button,
+  .expression-button {
+    padding: 6px 10px;
+    font-size: 11px;
+  }
+}
+
+

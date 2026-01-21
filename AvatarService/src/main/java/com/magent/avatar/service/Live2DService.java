@@ -2,18 +2,19 @@ package com.magent.avatar.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.magent.avatar.exception.FileStorageException;
+import com.magent.avatar.exception.InvalidModelException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.File;
-import java.io.IOException;
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 @Service
 public class Live2DService {
@@ -21,39 +22,123 @@ public class Live2DService {
     @Value("${app.live2d.storage.path:./live2d-models}")
     private String storagePath;
 
+    @Value("${app.upload.max-size:52428800}") // 50MB default
+    private long maxFileSize;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private static final List<String> ALLOWED_EXTENSIONS = Arrays.asList(
+        ".moc3", ".moc", ".json", ".png", ".jpg", ".jpeg", ".physics3.json"
+    );
 
     public Map<String, Object> validateAndExtractModelInfo(MultipartFile modelFile) throws IOException {
         Map<String, Object> modelInfo = new HashMap<>();
 
-        // Check if it's a zip file containing Live2D model
+        // Validate filename
         String filename = modelFile.getOriginalFilename();
-        if (filename == null || !filename.toLowerCase().endsWith(".zip")) {
-            throw new IllegalArgumentException("Model file must be a ZIP archive");
+        if (filename == null || filename.trim().isEmpty()) {
+            throw new InvalidModelException("File name cannot be empty");
         }
 
-        // For now, return basic info - in production you'd extract and validate the model
+        // Validate file type
+        if (!filename.toLowerCase().endsWith(".zip")) {
+            throw new InvalidModelException("Model file must be a ZIP archive (.zip)");
+        }
+
+        // Validate file size
+        long fileSize = modelFile.getSize();
+        if (fileSize == 0) {
+            throw new InvalidModelException("File is empty");
+        }
+
+        if (fileSize > maxFileSize) {
+            throw new InvalidModelException(
+                String.format("File size (%d MB) exceeds maximum allowed size (%d MB)",
+                    fileSize / 1024 / 1024, maxFileSize / 1024 / 1024)
+            );
+        }
+
+        // Validate ZIP contents
+        List<String> zipContents = validateZipContents(modelFile);
+        if (zipContents.isEmpty()) {
+            throw new InvalidModelException("ZIP file is empty or corrupted");
+        }
+
+        // Check for required files (.moc3 or .moc)
+        boolean hasMocFile = zipContents.stream()
+            .anyMatch(f -> f.endsWith(".moc3") || f.endsWith(".moc"));
+        if (!hasMocFile) {
+            throw new InvalidModelException("ZIP file must contain a Live2D model file (.moc3 or .moc)");
+        }
+
         modelInfo.put("modelName", filename.replace(".zip", ""));
-        modelInfo.put("fileSize", modelFile.getSize());
+        modelInfo.put("fileSize", fileSize);
         modelInfo.put("contentType", modelFile.getContentType());
+        modelInfo.put("zipContents", zipContents);
+        modelInfo.put("hasMocFile", true);
 
         return modelInfo;
     }
 
-    public String saveModelFiles(MultipartFile modelFile, String avatarId) throws IOException {
-        String modelDirectory = storagePath + "/avatar-" + avatarId;
-        Path modelPath = Paths.get(modelDirectory);
+    private List<String> validateZipContents(MultipartFile zipFile) throws IOException {
+        List<String> contents = new ArrayList<>();
 
-        if (!Files.exists(modelPath)) {
-            Files.createDirectories(modelPath);
+        try (ZipInputStream zis = new ZipInputStream(zipFile.getInputStream())) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                if (!entry.isDirectory()) {
+                    String entryName = entry.getName().toLowerCase();
+                    
+                    // Validate file extension
+                    boolean isAllowed = ALLOWED_EXTENSIONS.stream()
+                        .anyMatch(entryName::endsWith);
+                    
+                    if (!isAllowed) {
+                        throw new InvalidModelException(
+                            String.format("Invalid file type in ZIP: %s. Allowed types: %s",
+                                entryName, ALLOWED_EXTENSIONS)
+                        );
+                    }
+                    
+                    contents.add(entry.getName());
+                }
+            }
+        } catch (IOException e) {
+            throw new InvalidModelException("Failed to read ZIP file: " + e.getMessage(), e);
         }
 
-        // Save the uploaded file
-        String filename = "model.zip";
-        Path filePath = modelPath.resolve(filename);
-        Files.copy(modelFile.getInputStream(), filePath);
+        return contents;
+    }
 
-        return modelDirectory;
+    public String saveModelFiles(MultipartFile modelFile, String avatarId) throws IOException {
+        try {
+            String modelDirectory = storagePath + "/avatar-" + avatarId;
+            Path modelPath = Paths.get(modelDirectory);
+
+            // Create directory
+            if (!Files.exists(modelPath)) {
+                Files.createDirectories(modelPath);
+            }
+
+            // Extract ZIP file
+            try (ZipInputStream zis = new ZipInputStream(modelFile.getInputStream())) {
+                ZipEntry entry;
+                while ((entry = zis.getNextEntry()) != null) {
+                    if (!entry.isDirectory()) {
+                        Path entryPath = modelPath.resolve(entry.getName());
+                        
+                        // Create parent directories if needed
+                        Files.createDirectories(entryPath.getParent());
+                        
+                        // Write file
+                        Files.copy(zis, entryPath);
+                    }
+                }
+            }
+
+            return modelDirectory;
+        } catch (IOException e) {
+            throw new FileStorageException("Failed to save model files: " + e.getMessage(), e);
+        }
     }
 
     public Map<String, Object> getModelConfig(String modelPath) {

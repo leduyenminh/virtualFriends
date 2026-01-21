@@ -12,6 +12,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.Arrays;
+import java.util.HashMap;
+
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -75,41 +78,114 @@ public class AvatarController {
             @RequestHeader("X-User") String userId) {
 
         try {
-            // Validate model file
+            // Validate input parameters
+            validateAvatarInput(name, description, category, modelFile, thumbnail);
+
+            // Validate model file and extract info
             Map<String, Object> modelInfo = live2DService.validateAndExtractModelInfo(modelFile);
+
+            // Validate thumbnail image
+            validateThumbnailImage(thumbnail);
 
             // Create avatar entity
             Avatar avatar = new Avatar();
-            avatar.setName(name);
-            avatar.setDescription(description);
-            avatar.setCategory(category);
+            avatar.setName(name.trim());
+            avatar.setDescription(description.trim());
+            avatar.setCategory(category.toLowerCase());
             avatar.setCreatedBy(userId);
-            avatar.setModelPath("/models/avatar-" + avatar.getId()); // Will be updated after save
-            avatar.setThumbnailPath("/thumbnails/avatar-" + avatar.getId() + ".png");
+            avatar.setPublic(true);
 
             if (tags != null && !tags.trim().isEmpty()) {
-                avatar.setTags(List.of(tags.split(",")));
+                List<String> tagList = Arrays.stream(tags.split(","))
+                    .map(String::trim)
+                    .filter(t -> !t.isEmpty())
+                    .collect(java.util.stream.Collectors.toList());
+                avatar.setTags(tagList);
             }
 
             // Save avatar first to get ID
             Avatar savedAvatar = avatarService.createAvatar(avatar);
 
-            // Update paths with actual ID
-            savedAvatar.setModelPath("/models/avatar-" + savedAvatar.getId());
-            savedAvatar.setThumbnailPath("/thumbnails/avatar-" + savedAvatar.getId() + ".png");
-
             // Save model files
             String modelPath = live2DService.saveModelFiles(modelFile, savedAvatar.getId().toString());
             savedAvatar.setModelPath(modelPath);
 
+            // Save thumbnail image
+            String thumbnailPath = saveThumbnailImage(thumbnail, savedAvatar.getId().toString());
+            savedAvatar.setThumbnailPath(thumbnailPath);
+
             // Save final avatar
             Avatar finalAvatar = avatarService.updateAvatar(savedAvatar.getId(), savedAvatar);
 
-            return ResponseEntity.status(HttpStatus.CREATED).body(finalAvatar);
+            Map<String, Object> response = new HashMap<>();
+            response.put("id", finalAvatar.getId());
+            response.put("name", finalAvatar.getName());
+            response.put("description", finalAvatar.getDescription());
+            response.put("category", finalAvatar.getCategory());
+            response.put("modelPath", finalAvatar.getModelPath());
+            response.put("thumbnailPath", finalAvatar.getThumbnailPath());
+            response.put("tags", finalAvatar.getTags());
+            response.put("createdAt", finalAvatar.getCreatedAt());
+            response.put("message", "Avatar uploaded successfully");
+
+            return ResponseEntity.status(HttpStatus.CREATED).body(response);
 
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+            Map<String, Object> error = new HashMap<>();
+            error.put("error", e.getClass().getSimpleName());
+            error.put("message", e.getMessage());
+            return ResponseEntity.badRequest().body(error);
         }
+    }
+
+    private void validateAvatarInput(String name, String description, String category, 
+                                     MultipartFile modelFile, MultipartFile thumbnail) {
+        if (name == null || name.trim().isEmpty()) {
+            throw new IllegalArgumentException("Avatar name is required");
+        }
+        if (name.length() > 255) {
+            throw new IllegalArgumentException("Avatar name must be less than 255 characters");
+        }
+        if (description == null || description.trim().isEmpty()) {
+            throw new IllegalArgumentException("Avatar description is required");
+        }
+        if (description.length() > 1000) {
+            throw new IllegalArgumentException("Avatar description must be less than 1000 characters");
+        }
+        if (category == null || category.trim().isEmpty()) {
+            throw new IllegalArgumentException("Avatar category is required");
+        }
+        if (modelFile == null || modelFile.isEmpty()) {
+            throw new IllegalArgumentException("Model file is required");
+        }
+        if (thumbnail == null || thumbnail.isEmpty()) {
+            throw new IllegalArgumentException("Thumbnail image is required");
+        }
+    }
+
+    private void validateThumbnailImage(MultipartFile thumbnail) {
+        String contentType = thumbnail.getContentType();
+        if (contentType == null || (!contentType.equals("image/jpeg") && 
+            !contentType.equals("image/png") && !contentType.equals("image/gif"))) {
+            throw new IllegalArgumentException("Thumbnail must be a valid image (JPG, PNG, GIF)");
+        }
+        if (thumbnail.getSize() > 5 * 1024 * 1024) { // 5MB limit
+            throw new IllegalArgumentException("Thumbnail image must be less than 5MB");
+        }
+    }
+
+    private String saveThumbnailImage(MultipartFile thumbnail, String avatarId) throws java.io.IOException {
+        // Implementation for saving thumbnail - store in uploads directory
+        java.nio.file.Path uploadPath = java.nio.file.Paths.get("./uploads/thumbnails");
+        if (!java.nio.file.Files.exists(uploadPath)) {
+            java.nio.file.Files.createDirectories(uploadPath);
+        }
+        
+        String filename = "avatar-" + avatarId + "-" + System.currentTimeMillis() + ".png";
+        java.nio.file.Path filePath = uploadPath.resolve(filename);
+        java.nio.file.Files.copy(thumbnail.getInputStream(), filePath);
+        
+        return "/uploads/thumbnails/" + filename;
     }
 
     @PutMapping("/models/{id}")

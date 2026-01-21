@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import Live2DAvatar from './Live2DAvatar';
+import AvatarUpload from './AvatarUpload';
 import './AvatarSelector.css';
 
-const AvatarSelector = ({ onAvatarSelect, selectedAvatarId }) => {
+const AvatarSelector = ({ selectedAvatar, onAvatarSelect }) => {
   const [avatars, setAvatars] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [currentEmotion, setCurrentEmotion] = useState('neutral');
+  const [showUploadModal, setShowUploadModal] = useState(false);
 
   useEffect(() => {
     fetchAvatars();
@@ -24,8 +26,8 @@ const AvatarSelector = ({ onAvatarSelect, selectedAvatarId }) => {
       setError(null);
 
       // Auto-select first avatar if none selected
-      if (!selectedAvatarId && avatarList.length > 0) {
-        onAvatarSelect(avatarList[0].id);
+      if (!selectedAvatar && avatarList.length > 0) {
+        onAvatarSelect(avatarList[0]);
       }
     } catch (err) {
       setError(err.message);
@@ -40,6 +42,13 @@ const AvatarSelector = ({ onAvatarSelect, selectedAvatarId }) => {
 
   const handleEmotionChange = (emotion) => {
     setCurrentEmotion(emotion);
+  };
+
+  const handleUploadSuccess = (newAvatar) => {
+    setAvatars(prev => [...prev, newAvatar]);
+    setShowUploadModal(false);
+    // Auto-select the newly uploaded avatar
+    onAvatarSelect(newAvatar.id);
   };
 
   if (loading) {
@@ -58,12 +67,20 @@ const AvatarSelector = ({ onAvatarSelect, selectedAvatarId }) => {
   return (
     <div className="avatar-selector">
       <div className="avatar-gallery">
-        <h3>Choose Your Avatar</h3>
+        <div className="gallery-header">
+          <h3>Choose Your Avatar</h3>
+          <button
+            className="upload-avatar-button"
+            onClick={() => setShowUploadModal(true)}
+          >
+            + Upload New Avatar
+          </button>
+        </div>
         <div className="avatar-grid">
           {avatars.map((avatar) => (
             <div
               key={avatar.id}
-              className={`avatar-card ${selectedAvatarId === avatar.id ? 'selected' : ''}`}
+              className={`avatar-card ${selectedAvatar && selectedAvatar.id === avatar.id ? 'selected' : ''}`}
               onClick={() => handleAvatarClick(avatar.id)}
             >
               <img
@@ -85,10 +102,10 @@ const AvatarSelector = ({ onAvatarSelect, selectedAvatarId }) => {
 
       <div className="avatar-preview">
         <h3>Preview</h3>
-        {selectedAvatarId ? (
+        {selectedAvatar ? (
           <div>
             <Live2DAvatar
-              avatarId={selectedAvatarId}
+              avatar={selectedAvatar}
               emotion={currentEmotion}
               onAvatarLoad={(model) => {
                 console.log('Avatar loaded:', model);
@@ -110,6 +127,13 @@ const AvatarSelector = ({ onAvatarSelect, selectedAvatarId }) => {
           </div>
         )}
       </div>
+
+      {showUploadModal && (
+        <AvatarUpload
+          onUploadSuccess={handleUploadSuccess}
+          onClose={() => setShowUploadModal(false)}
+        />
+      )}
     </div>
   );
 };
